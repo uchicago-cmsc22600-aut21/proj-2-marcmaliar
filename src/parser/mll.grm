@@ -101,14 +101,14 @@ Program1
         => (
                 case rest of
                         NONE => ( [], exp )
-                        | SOME (p1, exp) => (
+                        | SOME (p1, exp1) => (
                                 (PT.DclMark{ span = FULL_SPAN, tree =
                                         PT.DclVal(
                                                 PT.BindExp(
                                                         exp
                                                 )
                                         )
-                                })::p1, exp
+                                })::p1, exp1
                         )
                         (*| _ => ([], PT.ExpInt 0)  PANIC *)
         )
@@ -401,15 +401,17 @@ OpExp7
 
 ApplyExp
         : first=AtomicExp rest=(AtomicExp)*
-        => ( List.foldr 
+        => (
+               List.foldl
                 (fn (f, t) => (
                         PT.ExpMark{span = FULL_SPAN, tree = 
                                 PT.ExpApp(
-                                        f, t
+                                        t, f
                                 )}
                         )
                 )
-                first rest)
+                first rest
+        )
         ;
 
 AtomicExp
