@@ -9,6 +9,8 @@
  * University of Chicago
  *
  * ML-Antlr specification for ML Lite.
+ *
+ *                            => (PT.Prog([], PT.ExpInt 0))
  *)
 
 %name MLL;
@@ -71,6 +73,337 @@
 
 (* REPLACE WITH YOUR GRAMMAR *)
 Program
-        :
-                => (PT.Prog([], PT.ExpInt 0))
+        : p=Program1
+        => (PT.ProgMark{span = FULL_SPAN, tree = 
+                PT.Prog(
+                        List.take(p, length(p)-1),
+                        List.last(p)
+                )}
+        )
+        ;
+
+Program1
+        : TopDecl ";" Program
+        | exp=Exp rest=(";" Program)?
+        ;
+
+TopDecl
+        : "data" name=UID params=TyParams? "=" cons=(ConDcl ("|" ConDcl)*)
+        => (PT.DclMark{span = FULL_SPAN, tree = 
+                PT.DclData(
+                        name,
+                        params,
+                        cons
+                )}
+        )
+        | ValBind
+        ;
+
+TyParams
+        : "[" first=LID rest=( "," LID)* "]"
+        => (PT.TyMark{span = FULL_SPAN, tree = 
+                PT.TyTuple(
+                        List.map(
+                                (fn id => PT.TyVar(id)),
+                                first::rest
+                        )
+                        
+                )}
+        )
+        ;
+
+ConDcl
+        : id=UID ty=("of" Type)?
+        => (PT.ConMark{span = FULL_SPAN, tree = 
+                PT.Con(
+                        id,
+                        ty
+                )}
+        )
+        ;
+
+Type    (* NOT DONE *)
+        : AtomicType ("*" AtomicType)* ("->" Type)?
+        ;
+
+AtomicType (* NOT DONE *)
+        : id=UID lst=TyArgs?
+        => ( PT.TyMark(span = FULL_SPAN, tree = 
+                PT.TyCon(
+                        id, Option.getOpt(lst, [])
+                )
+        ))
+        | id=LID
+        => ( PT.TyMark(span = FULL_SPAN, tree = 
+                PT.TyVar(
+                        id
+                )
+        ))
+        | "(" Type ")"
+        ;
+
+TyArgs
+        : "[" Type ("," Type)* "]"
+        => (PT.TyMark{span = FULL_SPAN, tree = 
+                PT.TyTuple(
+                        first::rest    
+                )}
+        )
+        ; 
+
+ValBind 
+        : "let" pat=AtomicPat "=" exp=Exp 
+        => (PT.DclMark{span = FULL_SPAN, tree = 
+                PT.DclVal(
+                        PT.BindVal(
+                                pat,
+                                exp
+                        )
+                )}
+        )
+        | "fun" id=LID pats=AtomicPat+ "=" exp=Exp
+        => (PT.DclMark{span = FULL_SPAN, tree = 
+                PT.DclVal(
+                        PT.BindFun(
+                                id,
+                                pats,
+                                exp
+                        )
+                )}
+        )
+        ;
+
+Pat
+        : id=UID pat=SimplePat?
+        => (PT.PatMark{span = FULL_SPAN, tree = 
+                PT.PatCon(
+                        id, pat
+                )}
+        )
+        | pat1=SimplePat "::" pat2=SimplePat
+        => (PT.PatMark{span = FULL_SPAN, tree = 
+                PT.PatListCons(
+                        pat1, pat2
+                )}
+        )
+        | AtomicPat
+        ;
+
+AtomicPat
+        : "(" pat=SimplePat pats=("," SimplePat)* ")"
+        => (PT.PatMark{span = FULL_SPAN, tree = 
+                (PT.PatTuple(
+                        pat::Option.getOpt(pats, [])
+                ))}
+        )
+        | SimplePat
+        ;
+
+SimplePat
+        : id=LID
+        => (PT.PatMark{span = FULL_SPAN, tree = 
+                PT.PatVar(
+                        id
+                )}
+        )
+        | "_"
+        => (PT.PatMark{span = FULL_SPAN, tree = 
+                PT.PatWild}
+        )
+        ;
+
+Exp
+        : "if" exp1=Exp "then" exp2=Exp "else" exp3=Exp 
+        => (PT.ExpMark{span = FULL_SPAN, tree = 
+                PT.ExpIf(
+                        exp1,
+                        exp2,
+                        exp3
+                )}
+        )
+        | opexp1=OpExp optionop=(":=" OpExp)?  (* NOT DONE *)
+        (*=> (
+                case optionop of
+                        NONE -> ( opexp1 )
+                        | Some opexp2 -> PT.ExpMark{span = FULL_SPAN, tree = 
+                                        PT.Exp(
+                                                t, t2
+                                        )}
+        )*)
+        ;
+
+OpExp 
+        : OpExp1
+        ;
+
+OpExp1
+        : exp2=OpExp2 ("||" OpExp2 => ( ("||", OpExp2) ))* 
+        => ( List.foldl 
+                        (fn ((op', t2), t) => (
+                                PT.ExpMark{span = FULL_SPAN, tree = 
+                                        PT.ExpOrElse(
+                                                t, t2
+                                        )}
+                        )
+                ) 
+                exp2 SR)
+        ;
+
+OpExp2
+        : exp3=OpExp3 ("&&" OpExp3 => ( ("&&", OpExp3) ))* 
+        => ( List.foldl 
+                        (fn ((op', t2), t) => (
+                                PT.ExpMark{span = FULL_SPAN, tree = 
+                                        PT.ExpAndAlso(
+                                                t, t2
+                                        )}
+                        )
+                ) 
+                exp3 SR)
+        ;
+
+OpExp3
+        : exp4=OpExp4 ("==" OpExp4 => ( ("==", OpExp4) )
+                 |"!=" OpExp4 => ( ("!=", OpExp4) )
+                 | "<" OpExp4 => ( ( "<", OpExp4) )
+                 |"<=" OpExp4 => ( ("<=", OpExp4) ))*
+                 => ( List.foldl 
+                        (fn ((op', t2), t) => (
+                                PT.ExpMark{span = FULL_SPAN, tree = 
+                                        PT.ExpBin(
+                                                t, op', t2
+                                        )}
+                        )
+                ) 
+                exp4 SR)
+        ;
+
+OpExp4 
+        : exp5=OpExp5 ("::" OpExp5 => ( ("::", OpExp5) ))* 
+        => ( List.foldl 
+                        (fn ((op', t2), t) => (
+                                PT.ExpMark{span = FULL_SPAN, tree = 
+                                        PT.ExpListCons(
+                                                t, t2
+                                        )}
+                        )
+                ) 
+                exp5 SR)
+        ;
+
+OpExp5 
+        : exp6=OpExp6 ("+" OpExp6 => ( ("+", OpExp6) )
+                 |"-" OpExp6 => ( ("-", OpExp6) )
+                 |"^" OpExp6 => ( ("^", OpExp6) ))* 
+                 => ( List.foldl 
+                        (fn ((op', t2), t) => (
+                                PT.ExpMark{span = FULL_SPAN, tree = 
+                                        PT.ExpBin(
+                                                t, op', t2
+                                        )}
+                        )
+                ) 
+                exp6 SR)
+        ;
+
+OpExp6 
+        : exp7=OpExp7 ("*" OpExp7 => ( ("*", OpExp7) )
+                 |"/" OpExp7 => ( ("/", OpExp7) )
+                 |"%" OpExp7 => ( ("%", OpExp7) ))*
+                 => ( List.foldl 
+                        (fn ((op', t2), t) => (
+                                PT.ExpMark{span = FULL_SPAN, tree = 
+                                        PT.ExpBin(
+                                                t, op', t2
+                                        )}
+                        )
+                ) 
+                exp7 SR)
+        ;
+
+OpExp7 
+        : operators=("-" | "!")* applyexp=ApplyExp
+        => ( List.foldr 
+                (fn (op', t) => (
+                        PT.ExpMark{span = FULL_SPAN, tree = 
+                                PT.ExpUn(
+                                        op', t
+                                )}
+                        )
+                )
+                applyexp operators)
+        ;
+
+ApplyExp
+        : first=AtomicExp rest=(AtomicExp)*
+        => ( List.foldr 
+                (fn (f, t) => (
+                        PT.ExpMark{span = FULL_SPAN, tree = 
+                                PT.ExpApp(
+                                        f, t
+                                )}
+                        )
+                )
+                first rest)
+        ;
+
+AtomicExp
+        : str=LID
+        => (PT.ExpMark{span = FULL_SPAN, tree = 
+                PT.ExpVar(
+                        str
+                )}
+        )
+        | str=UID
+        => (PT.ExpMark{span = FULL_SPAN, tree = 
+                PT.ExpCon(
+                        str
+                )}
+        )
+        | num=NUMBER
+        => (PT.ExpMark{span = FULL_SPAN, tree = 
+                PT.ExpInt(
+                        num
+                )}
+        )
+        | strr=STRING
+        => (PT.ExpMark{span = FULL_SPAN, tree = 
+                PT.ExpStr(
+                        strr
+                )}
+        )
+        | "(" (first=Exp rest=("," Exp)* )? ")"
+        => (PT.ExpMark{span = FULL_SPAN, tree = 
+                PT.ExpTuple(
+                        first::Option.getOpt(rest, [])
+                )}
+        )
+        | "{" scope=Scope "}"
+        => (PT.ExpMark{span = FULL_SPAN, tree = 
+                PT.ExpScope(
+                        scope
+                )}
+        )
+        | "case" exp=Exp "of" rulelist=MatchCase+ "end"
+        => (PT.ExpMark{span = FULL_SPAN, tree = 
+                PT.ExpCase(
+                        exp,
+                        rulelist
+                )}
+        )
+        ;
+
+Scope
+        : ValBind ";" Scope
+        | Exp (";" Scope)?
+        ; 
+
+MatchCase 
+        : "{" pat=Pat "=>" scope=Scope "}"
+        => (PT.RuleMark{span = FULL_SPAN, tree = 
+                PT.RuleCase(
+                        pat,
+                        scope
+                )}
+        )
         ;
