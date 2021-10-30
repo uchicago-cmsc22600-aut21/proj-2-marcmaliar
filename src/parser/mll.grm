@@ -386,7 +386,7 @@ OpExp6
         ;
 
 OpExp7 
-        : ("-" => ((Atom.atom "-")) 
+        : ("-" => ((Atom.atom "unary -")) 
           |"!" => ((Atom.atom "!")))* applyexp=ApplyExp
         => ( List.foldr 
                 (fn (op', t) => (
@@ -445,9 +445,15 @@ AtomicExp
                         NONE => (PT.ExpMark{span = FULL_SPAN, tree = (
                                 PT.ExpTuple([])
                         )})
-                        | SOME (first, rest) => (PT.ExpMark{span = FULL_SPAN, tree = (
-                                PT.ExpTuple(first::rest)
-                        )})
+                        | SOME (first, rest) => (
+                                case rest of
+                                        [] => ( first )
+                                        | _ => (
+                                                PT.ExpMark{span = FULL_SPAN, tree = (
+                                                        PT.ExpTuple(first::rest)
+                                                )}
+                                        )
+                        )
         )
         | "{" scope=Scope "}"
         => (PT.ExpMark{span = FULL_SPAN, tree = 
